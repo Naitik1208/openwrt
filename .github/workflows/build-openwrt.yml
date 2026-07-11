@@ -1,0 +1,72 @@
+name: Build Custom OpenWrt Firmware
+
+on:
+  workflow_dispatch: # Allows you to manually trigger the build via the GitHub UI button
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Maximize Disk Space Headroom
+      run: |
+        echo "=== Original Disk Space ==="
+        df -h
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo docker image prune -a -f
+        echo "=== Cleaned Disk Space ==="
+        df -h
+
+    - name: Install Compilation Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+          bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
+          git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
+          libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz \
+          mkisofs msmtp nano p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply python3-docutils \
+          qemu-utils rsync scons squashfs-tools subversion swig texinfo u-boot-tools upx-ucl unzip \
+          uuid-dev xz-utils zlib1g-dev
+
+    - name: Update and Install Feeds
+      run: |
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: Load Configuration Profile
+      run: |
+        # If you have a custom saved .config in your repository, this pulls it in.
+        # Otherwise, it runs a defconfig baseline sweep.
+        [ -e .config ] && echo "Loading custom repository config..." || echo "No base config found."
+        
+        # Explicit override to drop the massive linux-firmware package that caused your crash
+        ./scripts/config --disable CONFIG_PACKAGE_linux-firmware
+        
+        make defconfig
+
+    - name: Compile Cross-Toolchain and Packages
+      run: |
+        echo "Starting parallel compilation sequence..."
+        make -j$(nproc) V=s || make -j1 V=s
+        echo "Compilation phase successfully complete!"
+
+    - name: Organize Completed Binaries
+      run: |
+        mkdir -p ./artifact/
+        # Grabs all completed output files out of the mediatek profile target path
+        find bin/targets/mediatek/filogic/ -type f \( -name "*initramfs*" -o -name "*sysupgrade*" -o -name "*.bin" \) -exec cp {} ./artifact/ \;
+        echo "=== Artifacts Prepared ==="
+        ls -la ./artifact/
+
+    - name: Upload Firmware Binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: OpenWrt_Filogic_Firmware
+        path: ./artifact/
