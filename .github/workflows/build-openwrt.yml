@@ -42,13 +42,14 @@ jobs:
 
     - name: Load Configuration Profile
       run: |
-        # If you have a custom saved .config in your repository, this pulls it in.
-        # Otherwise, it runs a defconfig baseline sweep.
         [ -e .config ] && echo "Loading custom repository config..." || echo "No base config found."
-        
-        # Explicit override to drop the massive linux-firmware package that caused your crash
-        ./scripts/config --disable CONFIG_PACKAGE_linux-firmware
-        
+
+        # Create a baseline config if it doesn't exist
+        touch .config
+
+        # Explicit override to drop the massive linux-firmware package by writing directly to the file
+        echo "CONFIG_PACKAGE_linux-firmware=n" >> .config
+
         make defconfig
 
     - name: Compile Cross-Toolchain and Packages
